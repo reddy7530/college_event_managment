@@ -13,7 +13,6 @@ const register = async (req, res) => {
             name,
             email,
             password,
-            role,
             college,
             department,
             year
@@ -23,6 +22,22 @@ const register = async (req, res) => {
         if (!name || !email || !password) {
             return res.status(400).json({
                 message: "Name, email and password are required"
+            });
+        }
+
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({
+                message: "Please enter a valid email address"
+            });
+        }
+
+        // Basic password validation
+        if (password.length < 6) {
+            return res.status(400).json({
+                message: "Password must be at least 6 characters"
             });
         }
 
@@ -44,6 +59,15 @@ const register = async (req, res) => {
             10
         );
 
+        /*
+         * SECURITY:
+         * Public registration always creates a student.
+         *
+         * Do NOT accept role from req.body.
+         * Users cannot register themselves as organizer/admin.
+         */
+        const role = "student";
+
         // Insert user
         const [result] = await db.query(
             `INSERT INTO users
@@ -63,7 +87,7 @@ const register = async (req, res) => {
                 name,
                 email,
                 hashedPassword,
-                role || "student",
+                role,
                 college || "",
                 department || "",
                 year || ""
@@ -78,9 +102,9 @@ const register = async (req, res) => {
     } catch (error) {
         console.error("Register error:", error);
 
+        // Do not expose internal/database errors
         res.status(500).json({
-            message: "Registration failed",
-            error: error.message
+            message: "Registration failed. Please try again later."
         });
     }
 };
@@ -172,6 +196,7 @@ const login = async (req, res) => {
 // GET PROFILE
 // GET /api/auth/profile
 // ==========================================
+// GET /api/auth/profile
 const getProfile = async (req, res) => {
     try {
         const [users] = await db.query(

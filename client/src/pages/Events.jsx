@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import api from "../services/api";
 
 function Events() {
-
     const [events, setEvents] = useState([]);
     const [filteredEvents, setFilteredEvents] = useState([]);
 
@@ -13,114 +12,162 @@ function Events() {
     const [loading, setLoading] = useState(true);
     const [message, setMessage] = useState("");
 
+    // Fetch events when page loads
     useEffect(() => {
         fetchEvents();
     }, []);
 
+    // Filter events whenever search/category/events change
     useEffect(() => {
+        let result = Array.isArray(events) ? events : [];
 
-        let result = events;
-
+        // Search filter
         if (search.trim()) {
-            result = result.filter((event) =>
-                event.title
-                    .toLowerCase()
-                    .includes(search.toLowerCase()) ||
-                event.description
-                    .toLowerCase()
-                    .includes(search.toLowerCase()) ||
-                event.venue
-                    .toLowerCase()
-                    .includes(search.toLowerCase())
-            );
+            const searchText = search.toLowerCase();
+
+            result = result.filter((event) => {
+                const title = String(event.title || "").toLowerCase();
+                const description = String(
+                    event.description || ""
+                ).toLowerCase();
+                const venue = String(event.venue || "").toLowerCase();
+
+                return (
+                    title.includes(searchText) ||
+                    description.includes(searchText) ||
+                    venue.includes(searchText)
+                );
+            });
         }
 
+        // Category filter
         if (category !== "All") {
             result = result.filter(
-                (event) =>
-                    event.category === category
+                (event) => event.category === category
             );
         }
 
         setFilteredEvents(result);
-
     }, [search, category, events]);
 
+    // Fetch events from backend
     const fetchEvents = async () => {
-
         try {
+            setLoading(true);
+            setMessage("");
 
-            const response =
-                await api.get("/events");
+            const response = await api.get("/events");
 
-            setEvents(response.data);
-            setFilteredEvents(response.data);
+            console.log("EVENT API RESPONSE:", response.data);
 
+            /*
+             * Handle different possible backend response formats.
+             *
+             * Format 1:
+             * [
+             *   { id: 1, title: "Event 1" }
+             * ]
+             *
+             * Format 2:
+             * {
+             *   events: [
+             *      { id: 1, title: "Event 1" }
+             *   ]
+             * }
+             *
+             * Format 3:
+             * {
+             *   data: [
+             *      { id: 1, title: "Event 1" }
+             *   ]
+             * }
+             */
+
+            let eventList = [];
+
+            if (Array.isArray(response.data)) {
+                eventList = response.data;
+            } else if (Array.isArray(response.data?.events)) {
+                eventList = response.data.events;
+            } else if (Array.isArray(response.data?.data)) {
+                eventList = response.data.data;
+            }
+
+            console.log("EVENT LIST:", eventList);
+
+            setEvents(eventList);
+            setFilteredEvents(eventList);
+
+            if (eventList.length === 0) {
+                setMessage("No events available.");
+            }
         } catch (error) {
+            console.error("Error fetching events:", error);
 
-            console.error(error);
+            setEvents([]);
+            setFilteredEvents([]);
 
             setMessage(
+                error.response?.data?.message ||
                 "Unable to load events."
             );
-
         } finally {
-
             setLoading(false);
-
         }
     };
 
+    // Format date
     const formatDate = (date) => {
+        if (!date) {
+            return "Date not available";
+        }
 
-        return new Date(date).toLocaleDateString(
-            "en-IN",
-            {
-                day: "2-digit",
-                month: "short",
-                year: "numeric"
-            }
-        );
+        const formattedDate = new Date(date);
+
+        if (isNaN(formattedDate.getTime())) {
+            return "Date not available";
+        }
+
+        return formattedDate.toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+        });
     };
 
+    // Calculate remaining seats
     const getSeatsLeft = (event) => {
-
-        return (
-            Number(event.capacity) -
-            Number(event.registeredParticipants)
+        const capacity = Number(event.capacity || 0);
+        const registered = Number(
+            event.registeredParticipants || 0
         );
 
+        return capacity - registered;
     };
 
+    // Category CSS class
     const getCategoryClass = (category) => {
-
-        return category
-            ?.toLowerCase()
+        return String(category || "")
+            .toLowerCase()
             .replace(/\s+/g, "-");
-
     };
 
+    // Loading screen
     if (loading) {
-
         return (
             <div className="loading-container">
-
                 <div className="spinner"></div>
-
                 <p>Loading events...</p>
-
             </div>
         );
-
     }
 
     return (
         <main>
 
-            {/* HERO */}
+            {/* ================= HERO ================= */}
 
             <section className="hero">
-
                 <div className="hero-content">
 
                     <span className="hero-badge">
@@ -143,11 +190,10 @@ function Events() {
                     </p>
 
                 </div>
-
             </section>
 
 
-            {/* EVENTS */}
+            {/* ================= EVENTS ================= */}
 
             <section className="events-section">
 
@@ -170,7 +216,7 @@ function Events() {
                 </div>
 
 
-                {/* SEARCH */}
+                {/* ================= SEARCH & FILTER ================= */}
 
                 <div className="filters">
 
@@ -189,13 +235,13 @@ function Events() {
 
                     </div>
 
+
                     <select
                         value={category}
                         onChange={(e) =>
                             setCategory(e.target.value)
                         }
                     >
-
                         <option value="All">
                             All Categories
                         </option>
@@ -227,11 +273,12 @@ function Events() {
                         <option value="Seminar">
                             Seminar
                         </option>
-
                     </select>
 
                 </div>
 
+
+                {/* ================= ERROR / MESSAGE ================= */}
 
                 {message && (
                     <div className="error-box">
@@ -240,7 +287,7 @@ function Events() {
                 )}
 
 
-                {/* EVENT GRID */}
+                {/* ================= EVENT GRID ================= */}
 
                 {filteredEvents.length === 0 ? (
 
@@ -270,6 +317,22 @@ function Events() {
                             const isFull =
                                 seatsLeft <= 0;
 
+                            const capacity =
+                                Number(event.capacity || 0);
+
+                            const registered =
+                                Number(
+                                    event.registeredParticipants || 0
+                                );
+
+                            const percentage =
+                                capacity > 0
+                                    ? Math.min(
+                                        (registered / capacity) * 100,
+                                        100
+                                    )
+                                    : 0;
+
                             return (
 
                                 <article
@@ -277,13 +340,19 @@ function Events() {
                                     key={event.id}
                                 >
 
+                                    {/* CARD TOP */}
+
                                     <div className="card-top">
 
                                         <span
-                                            className={`category-badge ${getCategoryClass(event.category)}`}
+                                            className={`category-badge ${getCategoryClass(
+                                                event.category
+                                            )}`}
                                         >
-                                            {event.category}
+                                            {event.category ||
+                                                "General"}
                                         </span>
+
 
                                         {isFull && (
                                             <span className="full-badge">
@@ -294,21 +363,34 @@ function Events() {
                                     </div>
 
 
+                                    {/* TITLE */}
+
                                     <h3>
-                                        {event.title}
+                                        {event.title ||
+                                            "Untitled Event"}
                                     </h3>
 
+
+                                    {/* DESCRIPTION */}
+
                                     <p className="event-description">
-                                        {event.description}
+                                        {event.description ||
+                                            "No description available."}
                                     </p>
 
 
+                                    {/* EVENT META */}
+
                                     <div className="event-meta">
 
+                                        {/* DATE */}
+
                                         <div>
+
                                             <span>📅</span>
 
                                             <div>
+
                                                 <small>
                                                     DATE
                                                 </small>
@@ -318,26 +400,37 @@ function Events() {
                                                         event.date
                                                     )}
                                                 </strong>
+
                                             </div>
+
                                         </div>
 
 
+                                        {/* VENUE */}
+
                                         <div>
+
                                             <span>📍</span>
 
                                             <div>
+
                                                 <small>
                                                     VENUE
                                                 </small>
 
                                                 <strong>
-                                                    {event.venue}
+                                                    {event.venue ||
+                                                        "Venue not available"}
                                                 </strong>
+
                                             </div>
+
                                         </div>
 
                                     </div>
 
+
+                                    {/* CAPACITY */}
 
                                     <div className="capacity">
 
@@ -345,35 +438,30 @@ function Events() {
 
                                             <span>
                                                 👥{" "}
-                                                {event.registeredParticipants}
+                                                {registered}
                                                 {" / "}
-                                                {event.capacity}
+                                                {capacity}
                                                 {" registered"}
                                             </span>
 
                                             <strong>
                                                 {isFull
                                                     ? "Full"
-                                                    : `${seatsLeft} seats left`}
+                                                    : `${Math.max(
+                                                        seatsLeft,
+                                                        0
+                                                    )} seats left`}
                                             </strong>
 
                                         </div>
+
 
                                         <div className="progress-bar">
 
                                             <div
                                                 className="progress"
                                                 style={{
-                                                    width: `${Math.min(
-                                                        (Number(
-                                                            event.registeredParticipants
-                                                        ) /
-                                                            Number(
-                                                                event.capacity
-                                                            )) *
-                                                            100,
-                                                        100
-                                                    )}%`
+                                                    width: `${percentage}%`,
                                                 }}
                                             />
 
@@ -381,6 +469,8 @@ function Events() {
 
                                     </div>
 
+
+                                    {/* VIEW EVENT */}
 
                                     <Link
                                         to={`/events/${event.id}`}
@@ -391,13 +481,10 @@ function Events() {
                                     </Link>
 
                                 </article>
-
                             );
-
                         })}
 
                     </div>
-
                 )}
 
             </section>

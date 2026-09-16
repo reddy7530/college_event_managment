@@ -7,7 +7,7 @@ const db = require("../config/db");
 const getAllEvents = async (req, res) => {
     try {
         const [events] = await db.query(`
-            SELECT 
+            SELECT
                 e.*,
                 COUNT(
                     CASE
@@ -22,10 +22,10 @@ const getAllEvents = async (req, res) => {
             ORDER BY e.date ASC, e.startTime ASC
         `);
 
-        res.json(events);
+        res.status(200).json(events);
 
     } catch (error) {
-        console.error("Get events error:", error);
+        console.error("GET ALL EVENTS ERROR:", error);
 
         res.status(500).json({
             message: "Failed to fetch events"
@@ -42,8 +42,14 @@ const getEventById = async (req, res) => {
     try {
         const { id } = req.params;
 
+        if (!id || isNaN(id)) {
+            return res.status(400).json({
+                message: "Invalid event ID"
+            });
+        }
+
         const [events] = await db.query(`
-            SELECT 
+            SELECT
                 e.*,
                 COUNT(
                     CASE
@@ -64,10 +70,10 @@ const getEventById = async (req, res) => {
             });
         }
 
-        res.json(events[0]);
+        res.status(200).json(events[0]);
 
     } catch (error) {
-        console.error("Get event error:", error);
+        console.error("GET EVENT ERROR:", error);
 
         res.status(500).json({
             message: "Failed to fetch event"
@@ -82,6 +88,150 @@ const getEventById = async (req, res) => {
 // ==========================================
 const createEvent = async (req, res) => {
     try {
+        // Make sure user is authenticated
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({
+                message: "Authentication required"
+            });
+        }
+
+        // Only organizer/admin can create events
+        if (
+            req.user.role !== "organizer" &&
+            req.user.role !== "admin"
+        ) {
+            return res.status(403).json({
+                message: "Only organizers can create events"
+            });
+        }
+
+        const {
+            title,
+            description,
+            category,
+            date,
+            startTime,
+            endTime,
+            venue,
+            capacity,
+            image
+        } = req.body;
+
+        // Required field validation
+        if (
+            !title ||
+            !description ||
+            !category ||
+            !date ||
+            !startTime ||
+            !endTime ||
+            !venue ||
+            capacity === undefined ||
+            capacity === ""
+        ) {
+            return res.status(400).json({
+                message: "All required fields must be provided"
+            });
+        }
+
+        // Capacity validation
+        const numericCapacity = Number(capacity);
+
+        if (
+            !Number.isInteger(numericCapacity) ||
+            numericCapacity < 1
+        ) {
+            return res.status(400).json({
+                message: "Capacity must be at least 1"
+            });
+        }
+
+        // Time validation
+        if (startTime >= endTime) {
+            return res.status(400).json({
+                message: "End time must be after start time"
+            });
+        }
+
+        // Insert event
+        const [result] = await db.query(
+            `
+            INSERT INTO events
+            (
+                title,
+                description,
+                category,
+                date,
+                startTime,
+                endTime,
+                venue,
+                organizerId,
+                capacity,
+                image,
+                status,
+                createdAt,
+                updatedAt
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+            `,
+            [
+                title.trim(),
+                description.trim(),
+                category,
+                date,
+                startTime,
+                endTime,
+                venue.trim(),
+                req.user.id,
+                numericCapacity,
+                image ? image.trim() : "",
+                "published"
+            ]
+        );
+
+        res.status(201).json({
+            message: "Event created successfully",
+            eventId: result.insertId
+        });
+
+    } catch (error) {
+        console.error("CREATE EVENT ERROR:", {
+            message: error.message,
+            code: error.code,
+            sqlMessage: error.sqlMessage,
+            sqlState: error.sqlState,
+            requestBody: req.body,
+            userId: req.user?.id,
+            userRole: req.user?.role
+        });
+
+        res.status(500).json({
+            message: "Failed to create event"
+        });
+    }
+};
+
+
+// ==========================================
+// UPDATE EVENT
+// PUT /api/events/:id
+// ==========================================
+const updateEvent = async (req, res) => {
+    try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({
+                message: "Authentication required"
+            });
+        }
+
+        const { id } = req.params;
+
+        if (!id || isNaN(id)) {
+            return res.status(400).json({
+                message: "Invalid event ID"
+            });
+        }
+
         const {
             title,
             description,
@@ -103,81 +253,32 @@ const createEvent = async (req, res) => {
             !startTime ||
             !endTime ||
             !venue ||
-            !capacity
+            capacity === undefined ||
+            capacity === ""
         ) {
             return res.status(400).json({
                 message: "All required fields must be provided"
             });
         }
 
-        const [result] = await db.query(
-            `INSERT INTO events
-            (
-                title,
-                description,
-                category,
-                date,
-                startTime,
-                endTime,
-                venue,
-                organizerId,
-                capacity,
-                image,
-                status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                title,
-                description,
-                category,
-                date,
-                startTime,
-                endTime,
-                venue,
-                req.user.id,
-                capacity,
-                image || "",
-                "published"
-            ]
-        );
+        const numericCapacity = Number(capacity);
 
-        res.status(201).json({
-            message: "Event created successfully",
-            eventId: result.insertId
-        });
+        if (
+            !Number.isInteger(numericCapacity) ||
+            numericCapacity < 1
+        ) {
+            return res.status(400).json({
+                message: "Capacity must be at least 1"
+            });
+        }
 
-    } catch (error) {
-        console.error("Create event error:", error);
+        if (startTime >= endTime) {
+            return res.status(400).json({
+                message: "End time must be after start time"
+            });
+        }
 
-        res.status(500).json({
-            message: "Failed to create event"
-        });
-    }
-};
-
-
-// ==========================================
-// UPDATE EVENT
-// PUT /api/events/:id
-// ==========================================
-const updateEvent = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const {
-            title,
-            description,
-            category,
-            date,
-            startTime,
-            endTime,
-            venue,
-            capacity,
-            image,
-            status
-        } = req.body;
-
-        // Check event exists
+        // Find event
         const [events] = await db.query(
             "SELECT * FROM events WHERE id = ?",
             [id]
@@ -191,10 +292,11 @@ const updateEvent = async (req, res) => {
 
         const event = events[0];
 
-        // Only event organizer or admin can update
+        // Organizer can edit own event.
+        // Admin can edit any event.
         if (
             req.user.role !== "admin" &&
-            event.organizerId !== req.user.id
+            Number(event.organizerId) !== Number(req.user.id)
         ) {
             return res.status(403).json({
                 message: "You cannot modify this event"
@@ -202,8 +304,9 @@ const updateEvent = async (req, res) => {
         }
 
         await db.query(
-            `UPDATE events
-             SET
+            `
+            UPDATE events
+            SET
                 title = ?,
                 description = ?,
                 category = ?,
@@ -212,30 +315,29 @@ const updateEvent = async (req, res) => {
                 endTime = ?,
                 venue = ?,
                 capacity = ?,
-                image = ?,
-                status = ?
-             WHERE id = ?`,
+                image = ?
+            WHERE id = ?
+            `,
             [
-                title,
-                description,
+                title.trim(),
+                description.trim(),
                 category,
                 date,
                 startTime,
                 endTime,
-                venue,
-                capacity,
-                image || "",
-                status || "published",
+                venue.trim(),
+                numericCapacity,
+                image ? image.trim() : "",
                 id
             ]
         );
 
-        res.json({
+        res.status(200).json({
             message: "Event updated successfully"
         });
 
     } catch (error) {
-        console.error("Update event error:", error);
+        console.error("UPDATE EVENT ERROR:", error);
 
         res.status(500).json({
             message: "Failed to update event"
@@ -250,9 +352,21 @@ const updateEvent = async (req, res) => {
 // ==========================================
 const deleteEvent = async (req, res) => {
     try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({
+                message: "Authentication required"
+            });
+        }
+
         const { id } = req.params;
 
-        // Check event exists
+        if (!id || isNaN(id)) {
+            return res.status(400).json({
+                message: "Invalid event ID"
+            });
+        }
+
+        // Find event
         const [events] = await db.query(
             "SELECT * FROM events WHERE id = ?",
             [id]
@@ -266,10 +380,11 @@ const deleteEvent = async (req, res) => {
 
         const event = events[0];
 
-        // Only organizer or admin can delete
+        // Organizer can delete own event.
+        // Admin can delete any event.
         if (
             req.user.role !== "admin" &&
-            event.organizerId !== req.user.id
+            Number(event.organizerId) !== Number(req.user.id)
         ) {
             return res.status(403).json({
                 message: "You cannot delete this event"
@@ -281,12 +396,12 @@ const deleteEvent = async (req, res) => {
             [id]
         );
 
-        res.json({
+        res.status(200).json({
             message: "Event deleted successfully"
         });
 
     } catch (error) {
-        console.error("Delete event error:", error);
+        console.error("DELETE EVENT ERROR:", error);
 
         res.status(500).json({
             message: "Failed to delete event"
@@ -295,6 +410,9 @@ const deleteEvent = async (req, res) => {
 };
 
 
+// ==========================================
+// EXPORT
+// ==========================================
 module.exports = {
     getAllEvents,
     getEventById,
